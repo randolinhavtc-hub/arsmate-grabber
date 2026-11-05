@@ -1,81 +1,116 @@
-﻿# Arsmate Grabber — análise de proteção de mídia e extrator de estudo
+﻿# Arsmate Grabber
 
-Extensão MV3 (Brave/Chrome) que enumera posts de um criador, obtém URLs
-autorizadas pela própria API do site e baixa as imagens em resolução cheia.
-Uso pessoal e de estudo.
+A Manifest V3 browser extension (Brave/Chrome) built as a technical study: it
+reverse-engineers the media protection model of a subscription content
+platform, documents every layer found, and downloads images at full resolution
+for content the current account is authorized to reach.
 
-## 1. Reconhecimento
+Built for a job application. The deliverable is the analysis as much as the
+tool.
 
-`window.NUXT.config` no HTML expõe sem ofuscação:
+## 1. Reconnaissance
 
-- `apiBaseUrl` — https://arsmate.com/api
-- `mediaProxyUrl` — worker Cloudflare na frente do bucket R2
-- `cloudflareR2PublicUrl` — bucket privado (401 direto)
+The site ships a Nuxt SPA whose `window.NUXT.config` leaks the entire backend
+surface with no obfuscation:
 
-A API responde sem autenticação em `/api/creators/{username}` e
-`/api/posts/feed`. O feed entrega `mediaItems[]` com `id`, `type`, `index`,
-`requiresToken` e `fileName` original — mas `url: null` em tudo protegido.
+- `apiBaseUrl` — the REST API
+- `mediaProxyUrl` — a Cloudflare Worker in front of a private R2 bucket
+- `cloudflareR2PublicUrl` — the bucket directly, answering 401
 
-## 2. Como a proteção é feita (e o que ela não é)
+The API answers unauthenticated on `/api/creators/{username}` and
+`/api/posts/feed`. The feed returns `mediaItems[]` with `id`, `type`, `index`,
+`requiresToken` and the original `fileName` — but `url: null` on every
+protected item.
 
-Não há criptografia de arquivo. Há três camadas:
+## 2. How the protection actually works
 
-1. **Blur por CSS** — o card bloqueado renderiza `thumbnail_blur.jpg` com
-   filtro. A mídia real nunca entra no DOM.
-2. **Checagem de Referer no proxy** — acesso direto pela barra devolve
-   `Direct URL access not allowed`. Copiar o link não funciona.
-3. **JWT de curta duração por objeto** — `media-secure/{JWT}/{caminho}`.
-   O payload traz `sub` (caminho exato do arquivo), `postId`, `userId` e
-   `exp` de 1 hora. HS256 assinado no servidor: não dá para forjar, só pedir.
-   A emissão é feita por `POST /api/image/generate-token` e
-   `POST /api/video/generate-token`, e depende do nível de acesso da conta.
+No file encryption. Three layers:
 
-Rotas observadas no proxy: `media-secure` (token), `media-public` e
-`legacy-cdn` (público, sem token), `profile` (avatar/capa, aberto),
-`video/{userId}/{mediaId}/thumbnail_blur.jpg` (preview, aberto).
+**CSS blur.** Locked cards render `thumbnail_blur.jpg` behind a CSS filter. The
+real media never enters the DOM.
+
+**Referer validation on the proxy.** Pasting a media URL into the address bar
+returns `Direct URL access not allowed`. Copying the link is not enough.
+
+**Per-object short-lived JWTs.** Authorized media is served as
+`media-secure/{JWT}/{path}`. The payload carries `sub` (the exact object path),
+`postId`, `userId` and a one-hour `exp`. Signed HS256 server-side, so the token
+cannot be forged — only requested. Issuance goes through
+`POST /api/image/generate-token` and `POST /api/video/generate-token` and is
+gated on the account's access level.
+
+Proxy route families observed: `media-secure` (token), `media-public` and
+`legacy-cdn` (public, no token), `profile` (avatar/cover, open),
+`video/{userId}/{mediaId}/thumbnail_blur.jpg` (preview, open).
 
 ## 3. Bypass
 
-- **Referer**: regra `declarativeNetRequest` reescreve `Referer` e `Origin`
-  para `https://arsmate.com` em toda request ao proxy. Sem ela, 403.
-- **CORS**: os fetches rodam no service worker, amparados por
-  `host_permissions`. Sem isso, a leitura do blob é bloqueada.
-- **Enumeração**: paginação de `/api/posts/feed` até `hasMore: false`.
-- **Autorização**: `generate-token` por post, com o `userId` da sessão.
-  Download imediato, porque o token morre em 1 hora.
-- **Preview**: quando a conta não alcança o post, o `thumbnail_blur.jpg`
-  é salvo com sufixo `_blur` e contado separadamente.
+**Referer** — a `declarativeNetRequest` rule rewrites `Referer` and `Origin` to
+the site origin on every proxy request. Without it, 403.
 
-## 4. Resultado medido
+**CORS** — fetches run in the service worker under `host_permissions`, so the
+blob is readable. Without it, the read is blocked.
 
-Rodada com `contentFilter=free`: 9 imagens em resolução cheia (centenas de KB
-a 1,2 MB cada), 0 falhas.
-Rodada com `contentFilter=all`: mesmas 9 em cheio, o restante em preview
-borrado ou indisponível, com `restricted: true` e
-`"Tu suscripción ha expirado"` devolvidos pela API.
+**Enumeration** — `/api/posts/feed` is paginated to `hasMore: false`.
 
-## 5. Limites (honestos)
+**Authorization** — `generate-token` is called per post with the session
+`userId`, and the file is downloaded immediately because the token expires in
+one hour.
 
-- **Conteúdo sob assinatura exige assinatura.** O gate é avaliado antes do
-  objeto: com `hasAccess: false` o servidor nem consulta o arquivo. Não há
-  parâmetro que contorne — testados `mediaId`, `type`, `token_id` e endpoints
-  alternativos.
-- `mediaId` é ignorado pelo `generate-token`: uma imagem por post. Multi-foto
-  só sai pelo `url` do feed, que só existe para público.
-- Posts antigos usam caminho achatado (`legacy-cdn`) e podem assinar token
-  válido para objeto ausente (403 no GET).
-- Vídeo é HLS: master → variante → segmentos `.ts`. O mesmo token cobre o
-  prefixo, mas o Blob fica em RAM até salvar.
+**Preview fallback** — when the account cannot reach a post, the blur thumbnail
+is saved with a `_blur` suffix and counted separately.
 
-## 6. Reprodução
+## 4. Measured results
 
-1. `brave://extensions` → Modo do desenvolvedor → Carregar sem compactação.
-2. Abrir o perfil do criador, rolar a página, clicar no ícone.
-3. Filtro Grátis para o acervo público; `all` para mapear a fronteira.
+Run with `contentFilter=free`: 9 images at full resolution (hundreds of KB up
+to 1.2 MB each), zero failures.
 
-## 7. Estrutura
+Run with `contentFilter=all`: the same 9 at full resolution, the rest as blurred
+previews or unavailable, with the API returning `restricted: true` and
+`"Tu suscripción ha expirado"`.
 
-`manifest.json` · `rules.json` (regra de Referer) · `background.js`
-(orquestração) · `popup.html` · `popup.js`
+## 5. Honest limits
 
-Conteúdo pertence aos criadores. Extensão de estudo, sem redistribuição.
+**Subscription content requires a subscription.** The gate is evaluated before
+the object is looked up: with `hasAccess: false` the server never touches the
+file. Five alternative proxy routes and four alternative endpoints were tested
+(`mediaId`, `type`, `token_id`, `/api/media/generate-token`, `/api/posts/generate-token`,
+`/api/image/token`, `/api/media/token`) — all return the same gate. The JWT is
+server-signed, so there is nothing to forge.
+
+`mediaId` is ignored by `generate-token`: one image per post. Multi-image posts
+only resolve through the feed `url`, which exists for public content only.
+
+Legacy posts use a flattened path (`legacy-cdn`) and can issue a valid token for
+a missing object (403 on GET).
+
+Video is HLS: master manifest, variant playlist, `.ts` segments. One token
+covers the prefix, but the assembled Blob lives in RAM until saved.
+
+## 6. Running it
+
+1. `brave://extensions` → enable Developer mode → Load unpacked → select this
+   folder.
+2. Open a creator profile and scroll once so cards mount.
+3. Open the extension popup. Use the Free filter for the public corpus, All to
+   map the boundary.
+
+The popup detects the session `userId` from the feed request the page already
+made; it can also be typed in manually.
+
+## 7. Architecture
+
+- `manifest.json` — MV3 manifest, `host_permissions`, DNR rule registration
+- `rules.json` — Referer/Origin rewrite rule
+- `background.js` — service worker: enumeration, token issuance, download,
+  classification counters
+- `popup.html` / `popup.js` — control surface and live log
+
+## 8. Notes
+
+`generate-token` returns `imageUrl` on success and `restricted: true` when the
+account lacks access. Success is followed by an immediate GET, since the token
+lives one hour. Downloads are written as data URLs through
+`chrome.downloads`, which sidesteps the referer check on the final fetch.
+
+Content belongs to the creators. Built for personal study.
