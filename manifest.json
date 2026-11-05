@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Arsmate Grabber (estudo)",
+  "version": "2.1.0",
+  "description": "Baixa midias do Arsmate via generate-token + media-secure.",
+  "permissions": ["downloads", "declarativeNetRequest", "scripting", "activeTab", "storage"],
+  "host_permissions": [
+    "https://arsmate.com/*",
+    "https://video-proxy.aroman-4f3.workers.dev/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [{ "id": "referer", "enabled": true, "path": "rules.json" }]
+  },
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html" }
+}

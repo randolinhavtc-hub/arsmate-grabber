@@ -1,0 +1,17 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "Referer", "operation": "set", "value": "https://arsmate.com/" },
+        { "header": "Origin",  "operation": "set", "value": "https://arsmate.com" }
+      ]
+    },
+    "condition": {
+      "urlFilter": "||video-proxy.aroman-4f3.workers.dev",
+      "resourceTypes": ["xmlhttprequest", "media", "image", "other"]
+    }
+  }
+]

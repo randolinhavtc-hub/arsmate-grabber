@@ -1,0 +1,34 @@
+﻿<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { width: 330px; font: 13px/1.4 system-ui; background:#161616; color:#eee; padding:12px; }
+  h1 { font-size: 14px; margin: 0 0 10px; }
+  label { display:block; margin: 8px 0 3px; color:#9aa; font-size:11px; }
+  select, input { width:100%; padding:5px; background:#242424; color:#eee; border:1px solid #333; border-radius:4px; }
+  .row { display:flex; gap:6px; margin-top:10px; }
+  button { flex:1; padding:8px; border:0; border-radius:4px; cursor:pointer; font-weight:600; }
+  #go { background:#5ce1e6; color:#000; } #stop { background:#3a3a3a; color:#eee; }
+  #log { margin-top:10px; height:190px; overflow:auto; background:#0d0d0d; border:1px solid #262626;
+         padding:6px; font: 11px/1.35 ui-monospace, monospace; white-space:pre-wrap; }
+</style>
+<h1>Arsmate Grabber v2</h1>
+<label>userId da sua conta (vazio = anonimo)</label>
+<input id="userId" type="number" placeholder="detectado da pagina">
+<label>Filtro de conteudo</label>
+<select id="filtro">
+  <option value="all">Tudo</option>
+  <option value="free">Gratis</option>
+  <option value="subscription">Assinatura</option>
+  <option value="ppv">PPV</option>
+</select>
+<label>Modo</label>
+<select id="modo">
+  <option value="api">API + generate-token (todas)</option>
+  <option value="dom">Somente DOM (so o que ja carregou)</option>
+</select>
+<label><input id="videos" type="checkbox" style="width:auto"> incluir videos (HLS)</label>
+<label>Intervalo (ms)</label>
+<input id="delay" type="number" value="350" min="0">
+<div class="row"><button id="go">Iniciar</button><button id="stop">Parar</button></div>
+<div id="log"></div>
+<script src="popup.js"></script>
